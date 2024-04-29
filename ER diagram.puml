@@ -1,0 +1,36 @@
+@startuml CalenderApp ER diagram
+
+entity "Event" as Event {
+  *EventID : INT PK
+  *StartDateTime : DATETIME R
+  EndDateTime : DATETIME
+  Description : TEXT
+  Location : TEXT
+}
+
+entity "RecurrenceRule" as RecurrenceRule {
+  *RuleID : INT PK
+  ParentRuleID : INT
+  *EventID : INT FK
+  *Frequency : VARCHAR(1) R
+  *Interval : INT(2) R
+  *StartDate : DATE R
+  EndDate : DATE R
+}
+
+entity "EventInstance" as EventInstance {
+  *EventInstanceID : INT PK
+  *EventID : INT FK
+  *RuleID : INT FK
+  *IsAltered : BOOL R
+  StartDateTime : DATETIME
+  EndDateTime : DATETIME
+  Description : TEXT
+  Location : TEXT
+}
+
+Event ||..o{ RecurrenceRule
+Event ||..o{ EventInstance
+RecurrenceRule }o..|| EventInstance
+
+@enduml

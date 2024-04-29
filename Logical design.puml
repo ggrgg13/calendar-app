@@ -1,0 +1,78 @@
+@startuml CalenderApp ER diagram
+
+entity "Event" as Event {
+    *EventID : INT [PK]
+    *StartTime : TIME [NOT NULL]
+    EndTime : TIME [NOT NULL]
+    {field} Title: VARCHAR(255) [NOT NULL]
+    Description : TEXT
+    Location : TEXT
+}
+note left of Event
+Stores info about one event or a serie of events, to be referenced by EventInstance and RecurrenceRule.
+Event is not directly displayed, instead info is fed to EventInstance, which then displays the event.
+This design saves space, so descriptions doesn't have to be copied to every instance.
+end note
+
+entity "RecurrenceRule" as RecurrenceRule {
+    *RuleID : INT [PK]
+    *EventID : INT [FK, NOT NULL]
+    {field} *Frequency : INT(1) [NOT NULL]
+    {field}*Interval : INT(4) [NOT NULL DEFAULT 0]
+    *StartDate : DATE [NOT NULL]
+    *EndDate : DATE [NOT NULL]
+}
+note left of RecurrenceRule
+Rules for events. Using rulesets, it can take an event and create EventInstances for it.
+Frequency determines basic recurrence rules. It can be:
+0: not repeating
+1: every day
+2: every week
+3: every month
+4: every year
+5: Xth week of every month
+6: Xth day of Xth month every year
+7: Xth week of Xth month every year
+
+Interval determines detailed recurrence rules. Its rulesets change depending on the frequency:
+0: not applicable
+Every week: 1~7 for weekdays
+Every month: 1~31 for day of the month
+Every year: 1~356 for day in the year
+Xth week of every month: 2 digits, where the first digit is the week number (1-5) and the second
+digit is the weekday (1=Monday, ... 7=Sunday)
+    For example: 23 means the 3rd Wednesday of the month
+Xth day of Xth month every year: 4 digits, where the first two digits are the month (01-12) and
+the last two digits are the day (01-31)
+    For example: 0305 means March 5th
+Xth week of Xth month every year: 4 digits, where the first two digits are the month (01-12), the
+third digit is the week of the month (1-5), and the last digit is the weekday (1=Monday, ... 7=Sunday)
+    For example: 0825 means the 5th Friday of August
+end note
+
+entity "EventInstance" as EventInstance {
+    *EventInstanceID : INT [PK]
+    *EventID : INT [FK, NOT NULL]
+    *RuleID : INT [FK, NOT NULL]
+    *IsAltered : BOOL [NOT NULL, DEFAULT FALSE]
+    StartTime : TIME [NOT NULL]
+    EndTime : TIME [NOT NULL]
+    {field} Title: VARCHAR(255)
+    Description : TEXT
+    Location : TEXT
+}
+note left of EventInstance
+An instance of an event. Normally, when displayed, its link to Event is used to fetch the Title, 
+description and location. 
+However, if IsAltered is set to true, then it uses its own data fordisplaying. This is done so that 
+one event in a recurring event chain can be changed without unlinking it from other events.
+There is one small loophole where Title can be left empty for EventInstance. This is an issue with
+the structure, where I want to keep it empty if IsAltered is FALSE, but I still want to enforce its
+requirement if IsAltered is true. This will have to be enforced in the app logic instead.
+end note
+
+Event ||--o{ RecurrenceRule : "Cascade"
+Event ||..o{ EventInstance : "Cascade"
+RecurrenceRule ||--o{ EventInstance : "Cascade"
+
+@enduml
