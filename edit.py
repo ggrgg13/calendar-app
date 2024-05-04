@@ -1,6 +1,6 @@
-import psycopg2 # PostgreSQL connection
-import datetime # Time handling
-import pytz # Timezone handling
+import psycopg2
+import datetime
+import pytz
 class Edit:
     def __init__(self):
         self.conn = psycopg2.connect(

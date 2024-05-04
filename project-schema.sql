@@ -18,26 +18,28 @@ RETURNS INT AS $$
 DECLARE
     new_event_id INT;
 BEGIN
-    -- Validate input
+    -- Validate time selection
     IF p_start_date > p_end_date OR p_start_time > p_end_time THEN
         RAISE EXCEPTION 'Invalid date or time range';
     END IF;
 
-    -- Insert the new event record into the 'Event' table
-    INSERT INTO Event (Title, Description, Location, StartDate, EndDate, StartTime, EndTime, Frequency, Interval)
+    -- Insert the new event record into the 'Events' table
+    INSERT INTO Events (Title, Description, Location, StartDate, EndDate, StartTime, EndTime, Frequency, Interval)
     VALUES (p_title, p_description, p_location, p_start_date, p_end_date, p_start_time, p_end_time, p_frequency, p_interval)
     RETURNING EventID INTO new_event_id;  
 
     RETURN new_event_id;
 END;
+$$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION delete_event(p_event_id INT)
 RETURNS void AS $$
 BEGIN
     -- Delete the event (cascading delete will handle instances)
-    DELETE FROM Event 
+    DELETE FROM Events
     WHERE EventID = p_event_id;
 END;
+$$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION edit_event(
     p_event_id INT,
@@ -71,34 +73,27 @@ BEGIN
         Frequency = p_frequency,
         Interval = p_interval
     WHERE EventID = p_event_id;
-
-    -- Optional: Handle the update of existing instances and generation of new ones
-    -- You might want to call functions like 'update_display' here, 
-    -- depending on how your UI and calendar logic is designed.
 END;
+$$ LANGUAGE plpgsql;
 
 -- END EDIT OPERATIONS
 
 -- START UPDATE DISPLAY
 
 -- Dynamically create and delete events based on what time period is displayed
--- Is wrapped in a transaction for safty
 CREATE OR REPLACE FUNCTION update_display(display_start_date DATE, display_end_date DATE)
 RETURNS void AS $$
 BEGIN
-    BEGIN;
-        -- Delete all entries from EventInstance
-        DELETE FROM EventInstance;
-
-        -- Call the function to create new event instances within the specified range
-        PERFORM create_event_instances(display_start_date, display_end_date);
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        -- In case of an error during deletion or instance creation, roll back the transaction
-        ROLLBACK;
-        RAISE;  -- Reraise the caught exception for further handling or logging
+    RAISE NOTICE 'begin update display';
+    -- Delete all entries from EventInstance
+    DELETE FROM EventInstance;
+    RAISE NOTICE 'deleted all instances';
+    -- Call the function to create new event instances within the specified range
+    RAISE NOTICE 'creating instances';
+    PERFORM create_event_instances(display_start_date, display_end_date);
+    RAISE NOTICE 'done creating instances';
 END;
+$$ LANGUAGE plpgsql;
 
 -- END UPDATE DISPLAY
 
@@ -107,23 +102,23 @@ END;
 -- Insert a single event instance given event, rules
 CREATE OR REPLACE FUNCTION insert_event_instance(
     p_event_id INT,
-    p_rule_id INT,
-    p_start_datetime TIMESTAMP,
-    p_end_datetime TIMESTAMP
+    p_start_datetime TIMESTAMP WITHOUT TIME ZONE,
+    p_end_datetime TIMESTAMP WITHOUT TIME ZONE
 )
 RETURNS void AS $$
 BEGIN
     -- Insert the provided values into the EventInstance table
-    INSERT INTO EventInstance (EventID, RuleID, StartDateTime, EndDateTime)
-    VALUES (p_event_id, p_rule_id, p_start_datetime, p_end_datetime);
+    INSERT INTO EventInstance (EventID, StartDateTime, EndDateTime)
+    VALUES (p_event_id, p_start_datetime, p_end_datetime);
 END;
+$$ LANGUAGE plpgsql;
 
 -- Create all event instances in the displayed timeframe
 CREATE OR REPLACE FUNCTION create_event_instances(display_start_date DATE, display_end_date DATE)
 RETURNS void AS $$
 DECLARE
-    event RECORD;
-    current_date DATE;
+    event_row RECORD;
+    cursor_date DATE;
     week_of_month INT;
     day_of_week INT;
     month_num INT;
@@ -132,81 +127,108 @@ DECLARE
     start_datetime TIMESTAMP;
     end_datetime TIMESTAMP;
 BEGIN
-    FOR event IN SELECT * FROM Event LOOP -- Removed range check on dates 
+    RAISE NOTICE 'begin instance creation';
+    RAISE NOTICE 'Display Start Date: %, Display End Date: %', display_start_date, display_end_date;
+    RAISE NOTICE 'begin looping over all event';
+    FOR event_row IN SELECT * FROM Events
+    LOOP
+        RAISE NOTICE 'success?';
+    END LOOP;
+    
+    FOR event_row IN SELECT * FROM Events
+        WHERE Events.StartDate >= display_start_date AND 
+            (Events.EndDate IS NULL OR Events.EndDate <= display_end_date)
+    LOOP
+        RAISE NOTICE 'parsing event %', event_row.EventID;
+        cursor_date = event_row.StartDate;
 
-        current_date := event.StartDate; -- No initialization with GREATEST()
+        WHILE cursor_date <= display_end_date LOOP
+            start_datetime = cursor_date + event_row.StartTime::time;
+            end_datetime = cursor_date + event_row.EndTime::time;
 
-        WHILE current_date <= display_end_date LOOP -- Removed COALESCE() for speed 
-            start_datetime := current_date + event.StartTime::time;
-            end_datetime := current_date + event.EndTime::time;
-
-            CASE event.Frequency
+            CASE event_row.Frequency
                 WHEN 0 THEN
-                    PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
+                    RAISE NOTICE 'Inserting event instance for frequency 0';
+                    PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
                     EXIT; 
+                    RAISE NOTICE 'Event instance inserted for frequency 0';
 
                 WHEN 1 THEN
-                    PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                    current_date := current_date + INTERVAL '1 day';
+                    RAISE NOTICE 'Inserting event instance for frequency 1';
+                    PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                    cursor_date = cursor_date + INTERVAL '1 day';
+                    RAISE NOTICE 'Event instance inserted for frequency 1';
 
                 WHEN 2 THEN
-                    PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                    current_date := current_date + INTERVAL '1 week';
+                    RAISE NOTICE 'Inserting event instance for frequency 2';
+                    PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                    cursor_date = cursor_date + INTERVAL '1 week';
+                    RAISE NOTICE 'Event instance inserted for frequency 2';
 
                 WHEN 3 THEN
-                    PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                    current_date := current_date + INTERVAL '1 month';
+                    RAISE NOTICE 'Inserting event instance for frequency 3';
+                    PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                    cursor_date= cursor_date + INTERVAL '1 month';
+                    RAISE NOTICE 'Event instance inserted for frequency 3';
 
                 WHEN 4 THEN
-                    PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                    current_date := current_date + INTERVAL '1 year';
+                    RAISE NOTICE 'Inserting event instance for frequency 4';
+                    PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                    cursor_date = cursor_date + INTERVAL '1 year';
+                    RAISE NOTICE 'Event instance inserted for frequency 4';
 
                 -- Case 5 to 7 has their own while loops to improve performance. When the inner while loop resolve, the outer while loops should immediately resolve as well
 
                 WHEN 5 THEN
-                    week_of_month := (event.Interval / 10) :: INT;
-                    day_of_week := event.Interval % 10;
-                    current_date := DATE_TRUNC('month', current_date) + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day';
-                    WHILE current_date <= display_end_date AND current_date >= DATE_TRUNC('month', current_date) AND EXTRACT(DAY FROM current_date) <= 28 LOOP 
-                        PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                        current_date := DATE_TRUNC('month', current_date + INTERVAL '1 month') + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day';
+                    RAISE NOTICE 'Inserting event instances for frequency 5';
+                    week_of_month = (event_row.Interval / 10) :: INT;
+                    day_of_week = event_row.Interval % 10;
+                    cursor_date = DATE_TRUNC('month', cursor_date) + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day';
+                    WHILE cursor_date <= display_end_date AND cursor_date >= DATE_TRUNC('month', cursor_date) AND EXTRACT(DAY FROM cursor_date) <= 28 LOOP 
+                        PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                        cursor_date = DATE_TRUNC('month', cursor_date + INTERVAL '1 month') + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day';
                     END LOOP;
+                    RAISE NOTICE 'Event instances inserted for frequency 5';
 
                 WHEN 6 THEN
-                    month_num := (event.Interval / 100);
-                    day_num := (event.Interval % 100);
+                    RAISE NOTICE 'Inserting event instances for frequency 6';
+                    month_num = (event_row.Interval / 100);
+                    day_num = (event_row.Interval % 100);
 
                     -- Optimization:  Move the adjustment outside the main loop
-                    IF EXTRACT(DAY FROM current_date) != day_num THEN
-                        current_date := MAKE_DATE(EXTRACT(YEAR FROM current_date)::INT, month_num, day_num);
+                    IF EXTRACT(DAY FROM cursor_date) != day_num THEN
+                        cursor_date = MAKE_DATE(EXTRACT(YEAR FROM cursor_date)::INT, month_num, day_num);
                     END IF;
 
-                    WHILE current_date <= display_end_date LOOP -- Main loop
-                        start_datetime := current_date + event.StartTime::time;
-                        end_datetime := current_date + event.EndTime::time;
-                        PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
-                        current_date := MAKE_DATE(EXTRACT(YEAR FROM current_date)::INT + 1, month_num, day_num);
+                    WHILE cursor_date <= display_end_date LOOP -- Main loop
+                        start_datetime = cursor_date + event_row.StartTime::time;
+                        end_datetime = cursor_date + event_row.EndTime::time;
+                        PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
+                        cursor_date = MAKE_DATE(EXTRACT(YEAR FROM cursor_date)::INT + 1, month_num, day_num);
                     END LOOP;
+                    RAISE NOTICE 'Event instances inserted for frequency 6';
 
                 WHEN 7 THEN
-                    month_num := (event.Interval / 100);
-                    week_of_month := (event.Interval % 100) / 10;
-                    day_of_week := event.Interval % 10;
+                    RAISE NOTICE 'Inserting event instances for frequency 7';
+                    month_num = (event_row.Interval / 100);
+                    week_of_month = (event_row.Interval % 100) / 10;
+                    day_of_week = event_row.Interval % 10;
 
-                    current_date := DATE_TRUNC('month', current_date) + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day'; 
+                    cursor_date = DATE_TRUNC('month', cursor_date) + (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day'; 
 
-                    WHILE current_date <= display_end_date LOOP 
-                        start_datetime := current_date + event.StartTime::time;
-                        end_datetime := current_date + event.EndTime::time;
-                        PERFORM insert_event_instance(event.EventID, event.EventID, start_datetime, end_datetime);
+                    WHILE cursor_date <= display_end_date LOOP 
+                        start_datetime = cursor_date + event_row.StartTime::time;
+                        end_datetime = cursor_date + event_row.EndTime::time;
+                        PERFORM insert_event_instance(event_row.EventID, start_datetime, end_datetime);
 
-                        current_date := MAKE_DATE(EXTRACT(YEAR FROM current_date)::INT + 1, month_num, 1) +
+                        cursor_date = MAKE_DATE(EXTRACT(YEAR FROM cursor_date)::INT + 1, month_num, 1) +
                                     (week_of_month - 1) * INTERVAL '1 week' + (day_of_week - 1) * INTERVAL '1 day'; 
                     END LOOP;
+                    RAISE NOTICE 'Event instances inserted for frequency 7';
+                RAISE NOTICE 'No cases used';
             END CASE;
         END LOOP;
     END LOOP;
 END;
-
--- END EVENT INSTANCE MANAGEMENT
 $$ LANGUAGE plpgsql;
+-- END EVENT INSTANCE MANAGEMENT

@@ -1,29 +1,28 @@
--- CalendarApp
--- Steven Lin
+@startuml CalendarApp ER Diagram
 
--- Uses PostgreSQL format
--- Assume server is always in UTC time
-CREATE TABLE Events (
-    EventID INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    StartTime TIME NOT NULL,
-    EndTime TIME NOT NULL,
-    StartDate DATE NOT NULL,
-    EndDate DATE,
-    Frequency INT NOT NULL,
-    Interval INT NOT NULL DEFAULT 0,
-    Title VARCHAR(255) NOT NULL,
-    Description TEXT,
-    Location TEXT
-);
+entity "Events" {
+  *EventID : int <<generated>> [PK]
+  StartTime : time [R]
+  EndTime : time [R]
+  StartDate : date [R]
+  EndDate : date 
+  Frequency : int [R]
+  Interval : int <<default 0>>
+  {field}Title : varchar(255) [R]
+  Description : text
+  Location : text
+}
 
-CREATE TABLE EventInstance (
-    EventInstanceID INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    EventID INT NOT NULL,
-    StartDateTime TIMESTAMP NOT NULL,
-    EndDateTime TIMESTAMP NOT NULL,
-    FOREIGN KEY (EventID) REFERENCES Events(EventID) ON DELETE CASCADE ON UPDATE CASCADE
-);
-/*
+entity "EventInstance" {
+  *EventInstanceID : int <<generated>> [PK]
+  *EventID : int [FK]
+  StartDateTime : timestamp [R]
+  EndDateTime : timestamp [R]
+}
+
+Events ||..o{ EventInstance 
+
+note right of Events
 Events contain rules that are used to create EventInstances.
 Frequency determines basic recurrence rules. It can be:
 0: not repeating
@@ -49,4 +48,6 @@ the last two digits are the day (01-31)
 Xth week of Xth month every year: 4 digits, where the first two digits are the month (01-12), the
 third digit is the week of the month (1-5), and the last digit is the weekday (1=Monday, ... 7=Sunday)
     For example: 0823 means the 3rd Friday of August
-*/
+end note
+
+@enduml

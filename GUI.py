@@ -2,14 +2,18 @@ import psycopg2
 import datetime
 import pytz
 import edit
+import os
+host = os.getenv("HOST")
+port = os.getenv("PORT")
+password = os.getenv("PASSWORD")
 class GUI:
     def __init__(self):
         self.conn = psycopg2.connect(
             host="host",
             port="port",
-            database="database",
-            user="username",
-            password="password"
+            database="postgres",
+            user="postgres",
+            password=password
         )
 
     def update_display(self, display_start: datetime.date, display_end: datetime.date):
