@@ -1,0 +1,16 @@
+@startuml CalenderApp ER diagram
+
+entity "Event" as Event {
+}
+
+entity "RecurrenceRule" as RecurrenceRule {
+}
+
+entity "EventInstance" as EventInstance {
+}
+
+Event ||..o{ RecurrenceRule
+Event ||..o{ EventInstance
+RecurrenceRule }o..|| EventInstance
+
+@enduml

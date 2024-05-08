@@ -1,0 +1,12 @@
+@startuml CalenderApp
+
+title  CalendarApp ER Diagram
+
+entity Events {
+}
+
+entity EventInstance {
+}
+
+Events ||..o{ EventInstance
+@enduml
